@@ -1,0 +1,122 @@
+import streamlit as st
+import os
+
+TESTS_FOLDER = "tests"
+
+# ---------- Helpers ----------
+def load_tests():
+    return [f for f in os.listdir(TESTS_FOLDER) if f.endswith(".txt")]
+
+def parse_questions(file_path):
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    blocks = content.strip().split("\n\n")
+    questions = []
+
+    for block in blocks:
+        lines = block.split("\n")
+        q = {"options": {}}
+
+        for line in lines:
+            if line.startswith("Q:"):
+                q["question"] = line[2:].strip()
+            elif line.startswith(("A)", "B)", "C)", "D)")):
+                q["options"][line[0]] = line[2:].strip()
+            elif line.startswith("ANSWER:"):
+                q["answer"] = line.split(":")[1].strip()
+            elif line.startswith("EXPLANATION:"):
+                q["explanation"] = line.split(":", 1)[1].strip()
+
+        questions.append(q)
+
+    return questions
+
+# ---------- Session State ----------
+if "current_q" not in st.session_state:
+    st.session_state.current_q = 0
+
+if "responses" not in st.session_state:
+    st.session_state.responses = {}
+
+if "submitted" not in st.session_state:
+    st.session_state.submitted = False
+
+# ---------- UI ----------
+st.title("📘 MCQ CBT Practice Tool")
+
+tests = load_tests()
+selected_test = st.selectbox("Select Test", tests)
+
+questions = parse_questions(os.path.join(TESTS_FOLDER, selected_test))
+total_q = len(questions)
+
+st.divider()
+
+q_index = st.session_state.current_q
+q = questions[q_index]
+
+st.subheader(f"Question {q_index + 1} of {total_q}")
+st.write(q["question"])
+
+selected_option = st.radio(
+    "Choose an answer:",
+    options=["A", "B", "C", "D"],
+    index=["A", "B", "C", "D"].index(
+        st.session_state.responses.get(q_index, "A")
+    ),
+    key=f"q_{q_index}"
+)
+
+st.session_state.responses[q_index] = selected_option
+
+# ---------- Show Answer ----------
+show_answer = st.checkbox("Show Answer & Explanation")
+
+if show_answer:
+    st.info(f"Correct Answer: {q['answer']}")
+    if "explanation" in q:
+        st.write("📝 Explanation:")
+        st.write(q["explanation"])
+
+st.divider()
+
+# ---------- Navigation ----------
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    if st.button("⬅ Previous") and q_index > 0:
+        st.session_state.current_q -= 1
+
+with col2:
+    if st.button("Next ➡") and q_index < total_q - 1:
+        st.session_state.current_q += 1
+
+with col3:
+    jump = st.number_input(
+        "Jump to Q#", min_value=1, max_value=total_q, value=q_index + 1
+    )
+    if st.button("Go"):
+        st.session_state.current_q = jump - 1
+
+with col4:
+    if st.button("Submit Test"):
+        st.session_state.submitted = True
+
+# ---------- Result ----------
+if st.session_state.submitted:
+    score = 0
+    for i, q in enumerate(questions):
+        if st.session_state.responses.get(i) == q["answer"]:
+            score += 1
+
+    st.success(f"✅ Your Score: {score} / {total_q}")
+
+    st.write("### Review")
+    for i, q in enumerate(questions):
+        user_ans = st.session_state.responses.get(i, "Not Attempted")
+        st.write(
+            f"**Q{i+1}.** {q['question']}\n"
+            f"- Your Answer: {user_ans}\n"
+            f"- Correct Answer: {q['answer']}"
+        )
