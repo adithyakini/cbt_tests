@@ -1,137 +1,230 @@
 import streamlit as st
-import json, os, time
+import time
+import os
+import json
+from dotenv import load_dotenv
+from openai import OpenAI
 
-HERE = os.path.dirname(__file__)
+# ==========================
+# CONFIG
+# ==========================
 
-# 🔑 Add your question sets here
-QUESTION_FILES = {
-    "Set 1": "questions.json",
-    "Set 2": "questions_set2.json",
-    "Set 6": "questions_set6.json"
+load_dotenv()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+st.set_page_config(page_title="AI CBT Engine", layout="wide")
+
+# ==========================
+# PROMPTS
+# ==========================
+
+SYSTEM_PROMPT = """
+You are an expert certification exam generator.
+
+Return ONLY valid JSON in this structure:
+
+{
+  "exam": "string",
+  "questions": [
+    {
+      "question_id": number,
+      "question_type": "single" or "multiple",
+      "question": "string",
+      "options": {
+        "A": "string",
+        "B": "string",
+        "C": "string",
+        "D": "string"
+      },
+      "correct_answers": ["A"],
+      "explanation": "string",
+      "domain": "string"
+    }
+  ]
 }
 
-# --- Sidebar select which set ---
-#st.sidebar.title("IIM Indore Mock CBT")
-selected_set = st.sidebar.selectbox("Choose Question Set", list(QUESTION_FILES.keys()))
+Rules:
+- Certification-level difficulty.
+- Multiple type must contain exactly 2 correct answers.
+- Avoid obvious answers.
+- Do not include extra text.
+"""
 
-# Load questions
-with open(os.path.join(HERE, QUESTION_FILES[selected_set]), "r", encoding="utf-8") as f:
-    QUESTIONS = json.load(f)
+COACH_PROMPT = """
+You are a certification mentor and cognitive learning coach.
 
-TOTAL_TIME_MIN = 60
-st.set_page_config(page_title="IIM Indore Mock CBT", layout="wide")
+Analyze the user's incorrect answers and:
 
-def sidebar_controls():
-    sections = sorted(list(set(q['section'] for q in QUESTIONS)))
-    choice = st.sidebar.selectbox("Jump to section", ["All"] + sections)
-    timer_on = st.sidebar.checkbox("Enable 60-min timer", value=True)
-    show_answers_after = st.sidebar.checkbox("Show answers after submission", value=True)
-    return choice, timer_on, show_answers_after
+1. Identify weak knowledge domains
+2. Identify thinking mistakes (conceptual gap, misreading, confusion)
+3. Provide improvement strategy
+4. Suggest 3 targeted practice areas
+5. Provide short motivational guidance
 
-def get_questions(filtered_section):
-    if filtered_section == "All":
-        return QUESTIONS
-    return [q for q in QUESTIONS if q['section'] == filtered_section]
+Be structured and professional.
+"""
 
-def format_question(q):
-    prompt = f"Q{q['qnum']}. ({q['section']}) {q['question']}"
-    return prompt
+# ==========================
+# FUNCTIONS
+# ==========================
 
-section_choice, timer_on, show_answers_after = sidebar_controls()
-questions = get_questions(section_choice)
+def generate_exam(exam_type, difficulty, num_questions):
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            response_format={"type": "json_object"},
+            temperature=0.7,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content":
+                    f"Generate {num_questions} {difficulty} difficulty questions for {exam_type}"
+                }
+            ]
+        )
 
-#st.title(f"IIM Indore — 60-question Mock CBT ({selected_set})")
-st.write("Format: 60 questions (20 Quant, 20 Analytical, 20 Verbal). 60 minutes recommended. Navigate with Previous/Next. Submit when done.")
+        return json.loads(response.choices[0].message.content)
 
-# --- Timer ---
-if timer_on:
-    if 'end_time' not in st.session_state or st.session_state.get('set_name') != selected_set:
-        st.session_state['end_time'] = time.time() + TOTAL_TIME_MIN*60
-        st.session_state['set_name'] = selected_set
-    remaining = int(st.session_state['end_time'] - time.time())
-    if remaining < 0:
-        st.error("Time is up! Please submit your test.")
-    else:
-        mins = remaining // 60
-        secs = remaining % 60
-        st.sidebar.markdown(f"**Time remaining:** {mins:02d}:{secs:02d}")
+    except Exception as e:
+        st.error(f"Error generating exam: {e}")
+        return None
 
-# --- Navigation states ---
-if 'index' not in st.session_state or st.session_state.get('set_name') != selected_set:
-    st.session_state.index = 0
-    st.session_state.answers = {str(q['qnum']): None for q in QUESTIONS}
-    st.session_state.submitted = False
-    st.session_state['set_name'] = selected_set
 
-cols = st.columns([1,6,1])
-with cols[0]:
-    if st.button("Previous"):
-        st.session_state.index = max(0, st.session_state.index - 1)
-with cols[2]:
-    if st.button("Next"):
-        st.session_state.index = min(len(questions)-1, st.session_state.index + 1)
+def evaluate_exam(exam_data, user_answers):
+    score = 0
+    incorrect_questions = []
 
-current_q = questions[st.session_state.index]
-st.markdown(f"### {format_question(current_q)}")
+    for q in exam_data["questions"]:
+        qid = q["question_id"]
+        correct = sorted(q["correct_answers"])
+        user = user_answers.get(qid)
 
-options = current_q.get("options", [])
+        if not isinstance(user, list):
+            user = [user] if user else []
 
-# If passage (no options), just display it
-if current_q.get("is_passage") or not options:
-    st.markdown("#### Passage")
-    st.info(current_q.get("passage", ""))
-    st.markdown(f"*(This passage applies to the next set of questions.)*")
-else:
-    key = f"q_{current_q['qnum']}"
-    saved = st.session_state['answers'].get(str(current_q['qnum']))
-    default_index = saved if saved is not None else 0
-    choice = st.radio("Select an option", options, index=default_index, key=key)
-    selected_index = options.index(choice)
-    st.session_state['answers'][str(current_q['qnum'])] = selected_index
+        if sorted(user) == correct:
+            score += 1
+        else:
+            incorrect_questions.append({
+                "question": q["question"],
+                "user_answer": user,
+                "correct_answer": correct,
+                "explanation": q["explanation"],
+                "domain": q["domain"]
+            })
 
-st.progress((st.session_state.index+1)/len(questions))
+    return score, incorrect_questions
 
-# --- Question palette ---
-if st.checkbox("Show question palette"):
-    cols = st.columns(10)
-    for i, q in enumerate(questions):
-        btn = cols[i%10].button(str(q['qnum']))
-        if btn:
-            st.session_state.index = i
 
-# --- Submit ---
-if st.button("Complete and Submit Test"):
-    st.session_state.submitted = True
+def generate_learning_feedback(incorrect_questions):
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            temperature=0.4,
+            messages=[
+                {"role": "system", "content": COACH_PROMPT},
+                {"role": "user", "content":
+                    f"Here are the incorrect responses:\n{json.dumps(incorrect_questions, indent=2)}"
+                }
+            ]
+        )
 
-if st.session_state.submitted:
-    total = 0
-    attempted = 0
-    wrong = 0
-    explanations = []
-    for q in QUESTIONS:
-        ans = st.session_state['answers'].get(str(q['qnum']))
-        if ans is not None:
-            attempted += 1
-            if q['answer'] is not None and ans == q['answer']:
-                total += 1
-            else:
-                wrong += 1
-        explanations.append((q, ans, q['answer']))
-    st.success(f"Score: {total} / {len(QUESTIONS)} | Attempted: {attempted} | Wrong: {wrong}")
-    if show_answers_after:
+        return response.choices[0].message.content
+
+    except Exception as e:
+        return f"Error generating learning feedback: {e}"
+
+
+# ==========================
+# UI
+# ==========================
+
+st.title("🧠 AI Certification CBT Platform")
+
+exam_type = st.selectbox(
+    "Select Exam",
+    ["FinOps Practitioner", "AZ-900", "AZ-104"]
+)
+
+difficulty = st.selectbox("Difficulty", ["Easy", "Medium", "Hard"])
+num_questions = st.slider("Number of Questions", 5, 30, 10)
+
+# ==========================
+# START EXAM
+# ==========================
+
+if st.button("Start Exam"):
+
+    exam_data = generate_exam(exam_type, difficulty, num_questions)
+
+    if exam_data:
+        st.session_state.exam_data = exam_data
+        st.session_state.start_time = time.time()
+        st.session_state.answers = {}
+        st.session_state.submitted = False
+
+# ==========================
+# RENDER EXAM
+# ==========================
+
+if "exam_data" in st.session_state:
+
+    elapsed = int(time.time() - st.session_state.start_time)
+    st.sidebar.title("Exam Info")
+    st.sidebar.write(f"⏱ Time Elapsed: {elapsed} sec")
+
+    st.sidebar.title("Question Navigator")
+    for q in st.session_state.exam_data["questions"]:
+        st.sidebar.write(f"Q{q['question_id']}")
+
+    for q in st.session_state.exam_data["questions"]:
+
+        st.markdown(f"---")
+        st.markdown(f"### Q{q['question_id']}: {q['question']}")
+
+        if q["question_type"] == "single":
+            selected = st.radio(
+                "Select one answer:",
+                options=list(q["options"].keys()),
+                format_func=lambda x: f"{x}. {q['options'][x]}",
+                key=f"q_{q['question_id']}"
+            )
+        else:
+            selected = st.multiselect(
+                "Select TWO answers:",
+                options=list(q["options"].keys()),
+                format_func=lambda x: f"{x}. {q['options'][x]}",
+                key=f"q_{q['question_id']}"
+            )
+
+        st.session_state.answers[q["question_id"]] = selected
+
+    if st.button("Submit Exam"):
+        st.session_state.submitted = True
+
+# ==========================
+# RESULTS + LEARNING COACH
+# ==========================
+
+if st.session_state.get("submitted"):
+
+    score, incorrect = evaluate_exam(
+        st.session_state.exam_data,
+        st.session_state.answers
+    )
+
+    total = len(st.session_state.exam_data["questions"])
+
+    st.markdown("---")
+    st.subheader("📊 Results")
+    st.success(f"Final Score: {score}/{total}")
+
+    if incorrect:
         st.markdown("---")
-        st.markdown("## Answer key & Explanations")
-        for q, user_ans, correct_ans in explanations:
-            st.markdown(f"**Q{q['qnum']}. {q['question']}**")
-            for idx, opt in enumerate(q['options']):
-                prefix = '✅' if correct_ans is not None and idx == correct_ans else ('➡️' if user_ans==idx and user_ans!=correct_ans else '  ')
-                st.write(f"{prefix} {chr(65+idx)}. {opt}")
-            st.write(f"**Explanation:** {q.get('explanation','-')}")
-            st.markdown("---")
+        st.subheader("🧑‍🏫 Personalized Learning Coach")
 
-# --- Download responses ---
-if st.button('Download Responses (JSON)'):
-    import io, json
-    buf = io.StringIO()
-    json.dump(st.session_state['answers'], buf)
-    st.download_button('Click to download responses JSON', buf.getvalue(), file_name=f'responses_{selected_set}.json')
+        feedback = generate_learning_feedback(incorrect)
+        st.markdown(feedback)
+
+    else:
+        st.balloons()
+        st.success("Perfect score! You're exam ready 🚀")
