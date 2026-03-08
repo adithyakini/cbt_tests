@@ -112,7 +112,7 @@ exam_type = st.selectbox(
 
 difficulty = st.selectbox(
     "Difficulty",
-    ["Easy", "Medium", "Hard"]
+    ["Hard", "Medium", "Easy"]
 )
 
 num_questions = st.slider(
