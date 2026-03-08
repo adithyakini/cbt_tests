@@ -105,7 +105,7 @@ st.title("🧠 CBT-Sim , Open AI generated CBT style Questions")
 
 exam_type = st.selectbox(
     "Exam",
-    ["AZ-900", "AZ-104", "FinOps Practitioner"]
+    ["AZ-900", "AZ-104", "FinOps Practitioner","Digital Marketing Interview Questions"]
 )
 
 difficulty = st.selectbox(
@@ -223,4 +223,5 @@ if st.session_state.get("submitted"):
 
     else:
         st.balloons()
+
 
