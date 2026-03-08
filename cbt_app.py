@@ -2,7 +2,6 @@ import streamlit as st
 import time
 import os
 import json
-#from dotenv import load_dotenv
 from openai import OpenAI
 
 # ==========================
@@ -10,7 +9,6 @@ from openai import OpenAI
 # ==========================
 
 #load_dotenv()
-#client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 st.set_page_config(page_title="AI CBT Engine", layout="wide")
 
@@ -228,4 +226,5 @@ if st.session_state.get("submitted"):
     else:
         st.balloons()
         st.success("Perfect score! You're exam ready 🚀")
+
 
