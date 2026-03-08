@@ -69,7 +69,7 @@ Be structured and professional.
 def generate_exam(exam_type, difficulty, num_questions):
     try:
         response = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model="gpt-4o-mini",
             response_format={"type": "json_object"},
             temperature=0.7,
             messages=[
@@ -226,5 +226,6 @@ if st.session_state.get("submitted"):
     else:
         st.balloons()
         st.success("Perfect score! You're exam ready 🚀")
+
 
 
