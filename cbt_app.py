@@ -101,9 +101,9 @@ def evaluate_exam(questions, answers):
 # UI
 # ==========================
 
-st.title("🧠 MindKraft")
+st.title("🎓 EdgeUp")
 st.markdown("---")
-st.caption("CBT Practice Generator | Powered by OpenAI | Built with Streamlit | ΛＶIＣΛ 2026")
+st.caption("CBT Practice Generator | Powered by OpenAI | ΛVICΛ 2026")
 
 exam_type = st.selectbox(
     "Exam",
