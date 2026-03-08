@@ -1,6 +1,6 @@
 import streamlit as st
+import random
 import time
-import os
 import json
 from openai import OpenAI
 
@@ -8,93 +8,83 @@ from openai import OpenAI
 # CONFIG
 # ==========================
 
-#load_dotenv()
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 st.set_page_config(page_title="AI CBT Engine", layout="wide")
+
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+QUESTION_BANK_SIZE = 50
+
 
 # ==========================
 # PROMPTS
 # ==========================
 
 SYSTEM_PROMPT = """
-You are an expert certification exam generator.
+You are a certification exam generator.
 
-Return ONLY valid JSON in this structure:
+Return ONLY valid JSON.
 
 {
-  "exam": "string",
-  "questions": [
+  "questions":[
     {
       "question_id": number,
-      "question_type": "single" or "multiple",
-      "question": "string",
-      "options": {
-        "A": "string",
-        "B": "string",
-        "C": "string",
-        "D": "string"
-      },
-      "correct_answers": ["A"],
-      "explanation": "string",
-      "domain": "string"
+      "question_type":"single",
+      "question":"string",
+      "options":{"A":"", "B":"", "C":"", "D":""},
+      "correct_answers":["A"],
+      "explanation":"string",
+      "domain":"string"
     }
   ]
 }
-
-Rules:
-- Certification-level difficulty.
-- Multiple type must contain exactly 2 correct answers.
-- Avoid obvious answers.
-- Do not include extra text.
 """
 
-COACH_PROMPT = """
-You are a certification mentor and cognitive learning coach.
-
-Analyze the user's incorrect answers and:
-
-1. Identify weak knowledge domains
-2. Identify thinking mistakes (conceptual gap, misreading, confusion)
-3. Provide improvement strategy
-4. Suggest 3 targeted practice areas
-5. Provide short motivational guidance
-
-Be structured and professional.
-"""
 
 # ==========================
-# FUNCTIONS
+# GENERATE QUESTION BANK
 # ==========================
 
-def generate_exam(exam_type, difficulty, num_questions):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            response_format={"type": "json_object"},
-            temperature=0.7,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content":
-                    f"Generate {num_questions} {difficulty} difficulty questions for {exam_type}"
-                }
-            ]
-        )
+@st.cache_data(show_spinner=True)
+def generate_question_bank(exam_type, difficulty):
 
-        return json.loads(response.choices[0].message.content)
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        response_format={"type": "json_object"},
+        temperature=0.7,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content":
+                f"Generate {QUESTION_BANK_SIZE} {difficulty} certification exam questions for {exam_type}"}
+        ]
+    )
 
-    except Exception as e:
-        st.error(f"Error generating exam: {e}")
-        return None
+    data = json.loads(response.choices[0].message.content)
+
+    return data["questions"]
 
 
-def evaluate_exam(exam_data, user_answers):
+# ==========================
+# CREATE EXAM FROM BANK
+# ==========================
+
+def create_exam(bank, num_questions):
+    return random.sample(bank, num_questions)
+
+
+# ==========================
+# EVALUATION
+# ==========================
+
+def evaluate_exam(questions, answers):
+
     score = 0
-    incorrect_questions = []
+    incorrect = []
 
-    for q in exam_data["questions"]:
+    for q in questions:
+
         qid = q["question_id"]
         correct = sorted(q["correct_answers"])
-        user = user_answers.get(qid)
+        user = answers.get(qid)
 
         if not isinstance(user, list):
             user = [user] if user else []
@@ -102,96 +92,101 @@ def evaluate_exam(exam_data, user_answers):
         if sorted(user) == correct:
             score += 1
         else:
-            incorrect_questions.append({
-                "question": q["question"],
-                "user_answer": user,
-                "correct_answer": correct,
-                "explanation": q["explanation"],
-                "domain": q["domain"]
-            })
+            incorrect.append(q)
 
-    return score, incorrect_questions
-
-
-def generate_learning_feedback(incorrect_questions):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            temperature=0.4,
-            messages=[
-                {"role": "system", "content": COACH_PROMPT},
-                {"role": "user", "content":
-                    f"Here are the incorrect responses:\n{json.dumps(incorrect_questions, indent=2)}"
-                }
-            ]
-        )
-
-        return response.choices[0].message.content
-
-    except Exception as e:
-        return f"Error generating learning feedback: {e}"
+    return score, incorrect
 
 
 # ==========================
 # UI
 # ==========================
 
-st.title("🧠 AI Certification CBT Platform")
+st.title("🧠 AI Certification CBT Simulator")
 
 exam_type = st.selectbox(
-    "Select Exam",
-    ["FinOps Practitioner", "AZ-900", "AZ-104"]
+    "Exam",
+    ["AZ-900", "AZ-104", "FinOps Practitioner"]
 )
 
-difficulty = st.selectbox("Difficulty", ["Easy", "Medium", "Hard"])
-num_questions = st.slider("Number of Questions", 5, 30, 10)
+difficulty = st.selectbox(
+    "Difficulty",
+    ["Easy", "Medium", "Hard"]
+)
+
+num_questions = st.slider(
+    "Questions",
+    5,
+    20,
+    10
+)
+
+# ==========================
+# GENERATE QUESTION BANK
+# ==========================
+
+if st.button("Load Question Bank"):
+
+    with st.spinner("Generating question bank..."):
+
+        bank = generate_question_bank(exam_type, difficulty)
+
+        st.session_state.bank = bank
+
+        st.success(f"{len(bank)} questions generated and cached")
+
 
 # ==========================
 # START EXAM
 # ==========================
 
-if st.button("Start Exam"):
+if "bank" in st.session_state:
 
-    exam_data = generate_exam(exam_type, difficulty, num_questions)
+    if st.button("Start Exam"):
 
-    if exam_data:
-        st.session_state.exam_data = exam_data
-        st.session_state.start_time = time.time()
+        exam_questions = create_exam(
+            st.session_state.bank,
+            num_questions
+        )
+
+        st.session_state.exam_questions = exam_questions
         st.session_state.answers = {}
+        st.session_state.start_time = time.time()
         st.session_state.submitted = False
 
+
 # ==========================
-# RENDER EXAM
+# EXAM UI
 # ==========================
 
-if "exam_data" in st.session_state:
+if "exam_questions" in st.session_state:
 
     elapsed = int(time.time() - st.session_state.start_time)
-    st.sidebar.title("Exam Info")
-    st.sidebar.write(f"⏱ Time Elapsed: {elapsed} sec")
 
-    st.sidebar.title("Question Navigator")
-    for q in st.session_state.exam_data["questions"]:
-        st.sidebar.write(f"Q{q['question_id']}")
+    st.sidebar.write(f"⏱ Time: {elapsed}s")
 
-    for q in st.session_state.exam_data["questions"]:
+    for q in st.session_state.exam_questions:
 
-        st.markdown(f"---")
-        st.markdown(f"### Q{q['question_id']}: {q['question']}")
+        st.markdown("---")
+        st.write(f"### {q['question']}")
+
+        options = list(q["options"].keys())
 
         if q["question_type"] == "single":
+
             selected = st.radio(
-                "Select one answer:",
-                options=list(q["options"].keys()),
+                "Choose one:",
+                options,
                 format_func=lambda x: f"{x}. {q['options'][x]}",
-                key=f"q_{q['question_id']}"
+                key=q["question_id"]
             )
+
         else:
+
             selected = st.multiselect(
-                "Select TWO answers:",
-                options=list(q["options"].keys()),
+                "Choose two:",
+                options,
                 format_func=lambda x: f"{x}. {q['options'][x]}",
-                key=f"q_{q['question_id']}"
+                key=q["question_id"]
             )
 
         st.session_state.answers[q["question_id"]] = selected
@@ -199,33 +194,32 @@ if "exam_data" in st.session_state:
     if st.button("Submit Exam"):
         st.session_state.submitted = True
 
+
 # ==========================
-# RESULTS + LEARNING COACH
+# RESULTS
 # ==========================
 
 if st.session_state.get("submitted"):
 
     score, incorrect = evaluate_exam(
-        st.session_state.exam_data,
+        st.session_state.exam_questions,
         st.session_state.answers
     )
 
-    total = len(st.session_state.exam_data["questions"])
+    total = len(st.session_state.exam_questions)
 
-    st.markdown("---")
-    st.subheader("📊 Results")
-    st.success(f"Final Score: {score}/{total}")
+    st.success(f"Score: {score}/{total}")
 
     if incorrect:
-        st.markdown("---")
-        st.subheader("🧑‍🏫 Personalized Learning Coach")
 
-        feedback = generate_learning_feedback(incorrect)
-        st.markdown(feedback)
+        st.subheader("Review")
+
+        for q in incorrect:
+
+            st.markdown("---")
+            st.write(q["question"])
+            st.write("Correct:", q["correct_answers"])
+            st.write("Explanation:", q["explanation"])
 
     else:
         st.balloons()
-        st.success("Perfect score! You're exam ready 🚀")
-
-
-
