@@ -101,7 +101,7 @@ def evaluate_exam(questions, answers):
 # UI
 # ==========================
 
-st.title("🧠 AI Certification CBT Simulator")
+st.title("🧠 CBT-Sim , Open AI generated CBT style Questions")
 
 exam_type = st.selectbox(
     "Exam",
@@ -223,3 +223,4 @@ if st.session_state.get("submitted"):
 
     else:
         st.balloons()
+
