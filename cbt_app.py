@@ -102,7 +102,8 @@ def evaluate_exam(questions, answers):
 # ==========================
 
 st.title("🧠 MindKraft — AI-powered certification mastery")
-st.footer("Λ Ｖ I Ｃ Λ 2026")
+st.markdown("---")
+st.caption("CBT Practice Generator | Powered by OpenAI | Built with Streamlit | ΛＶIＣΛ 2026")
 
 exam_type = st.selectbox(
     "Exam",
@@ -224,6 +225,7 @@ if st.session_state.get("submitted"):
 
     else:
         st.balloons()
+
 
 
 
