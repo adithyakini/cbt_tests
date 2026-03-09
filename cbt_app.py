@@ -180,7 +180,7 @@ Features
 • Exam timer  
 • Flag questions  
 
-ΛVICΛ Labs — 2026
+ΛVICΛ tinker labs — 2026
 """)
 
 
@@ -448,3 +448,4 @@ if st.session_state.get("submitted"):
     st.write(weakness)
 
     st.balloons()
+
