@@ -5,20 +5,21 @@ import json
 from collections import defaultdict
 from openai import OpenAI
 
-# ==================================
+# ======================================
 # CONFIG
-# ==================================
+# ======================================
 
 st.set_page_config(page_title="EdgeUp CBT Engine", layout="wide")
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 QUESTION_BANK_SIZE = 60
-EXAM_TIME_LIMIT = 900
+EXAM_TIME_LIMIT = 900  # seconds
 
-# ==================================
+
+# ======================================
 # PROMPT
-# ==================================
+# ======================================
 
 SYSTEM_PROMPT = """
 You are a certification exam generator.
@@ -41,9 +42,10 @@ Return ONLY valid JSON.
 }
 """
 
-# ==================================
-# QUESTION GENERATION
-# ==================================
+
+# ======================================
+# GENERATE QUESTION BANK
+# ======================================
 
 @st.cache_data
 def generate_question_bank(exam_type):
@@ -57,8 +59,11 @@ def generate_question_bank(exam_type):
             {
                 "role": "user",
                 "content": f"""
-Generate {QUESTION_BANK_SIZE} certification questions for {exam_type}.
-Include easy, medium, hard questions across domains.
+Generate {QUESTION_BANK_SIZE} certification exam questions for {exam_type}.
+
+Include:
+easy, medium, hard questions
+multiple domains
 """
             }
         ]
@@ -68,16 +73,18 @@ Include easy, medium, hard questions across domains.
 
     return data["questions"]
 
-# ==================================
+
+# ======================================
 # CREATE EXAM
-# ==================================
+# ======================================
 
 def create_exam(bank, num_questions):
     return random.sample(bank, num_questions)
 
-# ==================================
+
+# ======================================
 # EVALUATION
-# ==================================
+# ======================================
 
 def evaluate_exam(questions, answers):
 
@@ -89,6 +96,7 @@ def evaluate_exam(questions, answers):
 
         qid = q["question_id"]
         correct = sorted(q["correct_answers"])
+
         user = answers.get(qid)
 
         if not isinstance(user, list):
@@ -106,9 +114,10 @@ def evaluate_exam(questions, answers):
 
     return score, incorrect, domain_stats
 
-# ==================================
+
+# ======================================
 # AI WEAKNESS ANALYSIS
-# ==================================
+# ======================================
 
 def analyze_weakness(domain_stats):
 
@@ -131,14 +140,16 @@ Analyze exam results and suggest improvement areas.
 
     return response.choices[0].message.content
 
-# ==================================
+
+# ======================================
 # HEADER
-# ==================================
+# ======================================
 
 st.title("🎓 EdgeUp")
 st.caption("Adaptive CBT Engine | ΛVICΛ 2026")
 
 st.markdown("---")
+
 
 exam_type = st.selectbox(
     "Exam",
@@ -157,9 +168,10 @@ num_questions = st.slider(
     10
 )
 
-# ==================================
+
+# ======================================
 # LOAD QUESTION BANK
-# ==================================
+# ======================================
 
 if st.button("Load Question Bank"):
 
@@ -171,9 +183,10 @@ if st.button("Load Question Bank"):
 
         st.success(f"{len(bank)} questions generated")
 
-# ==================================
+
+# ======================================
 # START EXAM
-# ==================================
+# ======================================
 
 if "bank" in st.session_state:
 
@@ -189,25 +202,35 @@ if "bank" in st.session_state:
         st.session_state.current_q = 0
         st.session_state.start_time = time.time()
         st.session_state.submitted = False
+        st.session_state.review = False
 
-# ==================================
-# EXAM UI
-# ==================================
+
+# ======================================
+# EXAM INTERFACE
+# ======================================
 
 if "exam_questions" in st.session_state and not st.session_state.submitted:
+
+    questions = st.session_state.exam_questions
 
     elapsed = int(time.time() - st.session_state.start_time)
     remaining = max(EXAM_TIME_LIMIT - elapsed, 0)
 
     st.sidebar.metric("⏱ Time Remaining", f"{remaining}s")
 
-    questions = st.session_state.exam_questions
-    q_index = st.session_state.current_q
-    q = questions[q_index]
+    # progress metric
+    answered_count = sum(
+        1 for v in st.session_state.answers.values() if v
+    )
 
-    # =====================
-    # Navigator Panel
-    # =====================
+    st.sidebar.metric(
+        "Answered",
+        f"{answered_count}/{len(questions)}"
+    )
+
+    # ======================
+    # NAVIGATOR
+    # ======================
 
     st.sidebar.markdown("### Question Navigator")
 
@@ -215,18 +238,37 @@ if "exam_questions" in st.session_state and not st.session_state.submitted:
 
     for i in range(len(questions)):
 
+        q = questions[i]
+        qid = q["question_id"]
+
+        answered = (
+            qid in st.session_state.answers
+            and st.session_state.answers[qid]
+        )
+
+        flagged = i in st.session_state.flagged
+
         label = str(i+1)
 
-        if i in st.session_state.flagged:
+        if flagged:
             label = f"🚩{label}"
 
-        if cols[i%5].button(label):
+        if answered:
+            display = f"🟩{label}"
+        else:
+            display = f"🟥{label}"
+
+        if cols[i % 5].button(display):
+
             st.session_state.current_q = i
             st.rerun()
 
-    # =====================
-    # QUESTION
-    # =====================
+    # ======================
+    # QUESTION DISPLAY
+    # ======================
+
+    q_index = st.session_state.current_q
+    q = questions[q_index]
 
     st.markdown(f"### Question {q_index+1}")
 
@@ -234,32 +276,35 @@ if "exam_questions" in st.session_state and not st.session_state.submitted:
 
     options = list(q["options"].keys())
 
+    qid = q["question_id"]
+
+    previous = st.session_state.answers.get(qid)
+
     selected = st.radio(
         "Choose one:",
         options,
+        index=options.index(previous) if previous in options else None,
         format_func=lambda x: f"{x}. {q['options'][x]}",
-        index=None,
-        key=f"q_{q['question_id']}"
+        key=f"radio_{qid}"
     )
 
-    st.session_state.answers[q["question_id"]] = selected
+    st.session_state.answers[qid] = selected
 
-    # =====================
-    # FLAG BUTTON
-    # =====================
+    # ======================
+    # FLAG
+    # ======================
 
     if st.button("🚩 Flag Question"):
-
         st.session_state.flagged.add(q_index)
 
-    # =====================
+    # ======================
     # NAV BUTTONS
-    # =====================
+    # ======================
 
     col1,col2,col3 = st.columns(3)
 
     with col1:
-        if st.button("Previous") and q_index>0:
+        if st.button("Previous") and q_index > 0:
             st.session_state.current_q -= 1
             st.rerun()
 
@@ -273,9 +318,10 @@ if "exam_questions" in st.session_state and not st.session_state.submitted:
             st.session_state.review = True
             st.rerun()
 
-# ==================================
+
+# ======================================
 # REVIEW SCREEN
-# ==================================
+# ======================================
 
 if st.session_state.get("review"):
 
@@ -285,18 +331,26 @@ if st.session_state.get("review"):
 
     for i,q in enumerate(questions):
 
-        answered = q["question_id"] in st.session_state.answers
+        qid = q["question_id"]
+
+        answered = (
+            qid in st.session_state.answers
+            and st.session_state.answers[qid] is not None
+        )
 
         flag = "🚩" if i in st.session_state.flagged else ""
 
-        st.write(f"{i+1}. {'Answered' if answered else 'Not answered'} {flag}")
+        st.write(
+            f"{i+1}. {'Answered' if answered else 'Not answered'} {flag}"
+        )
 
     if st.button("Submit Exam"):
         st.session_state.submitted = True
 
-# ==================================
+
+# ======================================
 # RESULTS
-# ==================================
+# ======================================
 
 if st.session_state.get("submitted"):
 
