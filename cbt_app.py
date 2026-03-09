@@ -14,16 +14,18 @@ st.set_page_config(page_title="EdgeUp CBT Engine", layout="wide")
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 QUESTION_BANK_SIZE = 60
-EXAM_TIME_LIMIT = 900  # seconds
+EXAM_TIME_LIMIT = 900
 
 
 # ======================================
-# TIMER FORMATTER
+# TIME FORMAT
 # ======================================
 
 def format_time(seconds):
+
     minutes = seconds // 60
     secs = seconds % 60
+
     return f"{minutes:02}:{secs:02}"
 
 
@@ -58,7 +60,7 @@ Return ONLY valid JSON.
 # ======================================
 
 @st.cache_data
-def generate_question_bank(exam_type):
+def generate_question_bank(exam_topic):
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -69,8 +71,14 @@ def generate_question_bank(exam_type):
             {
                 "role": "user",
                 "content": f"""
-Generate {QUESTION_BANK_SIZE} certification exam questions for {exam_type}.
-Include easy, medium and hard questions across multiple domains.
+Generate {QUESTION_BANK_SIZE} certification style exam questions.
+
+Topic: {exam_topic}
+
+Include:
+- multiple domains
+- easy, medium and hard difficulty
+- real exam style questions
 """
             }
         ]
@@ -123,7 +131,7 @@ def evaluate_exam(questions, answers):
 
 
 # ======================================
-# AI WEAKNESS ANALYSIS
+# AI STUDY PLAN
 # ======================================
 
 def analyze_weakness(domain_stats):
@@ -149,29 +157,28 @@ Analyze exam results and suggest improvement areas.
 
 
 # ======================================
-# LEFT SIDEBAR (ABOUT)
+# LEFT SIDEBAR
 # ======================================
 
 st.sidebar.title("About EdgeUp")
 
 st.sidebar.markdown("""
-**EdgeUp CBT Engine**
+AI CBT practice engine.
 
-Practice certification exams with AI-generated questions.
+Generate certification exams for:
 
-Features:
+• Cloud certifications  
+• Technical interviews  
+• Marketing certifications  
+• Any professional exam topic  
 
-• Adaptive practice exams  
-• Question flagging  
+Features
+
+• Custom exam generation  
+• AI explanations  
 • Domain scoring  
-• AI study recommendations  
-• Practice for certifications like:
-  - AZ-900
-  - AZ-104
-  - FinOps
-  - DV360
-
-Powered by **OpenAI GPT-4o-mini**
+• Exam timer  
+• Flag questions  
 
 ΛVICΛ Labs — 2026
 """)
@@ -182,14 +189,19 @@ Powered by **OpenAI GPT-4o-mini**
 # ======================================
 
 st.title("🎓 EdgeUp")
-st.caption("Adaptive CBT Practice Engine | ΛVICΛ 2026")
+st.caption("AI Adaptive CBT Practice Engine")
 
 st.markdown("---")
 
 
-exam_type = st.selectbox(
-    "Exam",
+# ======================================
+# EXAM INPUT
+# ======================================
+
+preset_exam = st.selectbox(
+    "Choose a common exam",
     [
+        "",
         "AZ-900",
         "AZ-104",
         "FinOps Practitioner",
@@ -197,8 +209,18 @@ exam_type = st.selectbox(
     ]
 )
 
+custom_exam = st.text_input(
+    "Or enter your own exam topic",
+    placeholder="Example: AWS Solutions Architect"
+)
+
+# final topic logic
+
+exam_topic = custom_exam if custom_exam else preset_exam
+
+
 num_questions = st.slider(
-    "Questions",
+    "Number of Questions",
     5,
     25,
     10
@@ -206,18 +228,24 @@ num_questions = st.slider(
 
 
 # ======================================
-# LOAD QUESTION BANK
+# GENERATE QUESTION BANK
 # ======================================
 
 if st.button("Load Question Bank"):
 
-    with st.spinner("Generating questions..."):
+    if not exam_topic:
 
-        bank = generate_question_bank(exam_type)
+        st.error("Please select or enter an exam topic")
 
-        st.session_state.bank = bank
+    else:
 
-        st.success(f"{len(bank)} questions generated")
+        with st.spinner("Generating question bank..."):
+
+            bank = generate_question_bank(exam_topic)
+
+            st.session_state.bank = bank
+
+            st.success(f"{len(bank)} questions generated for {exam_topic}")
 
 
 # ======================================
@@ -252,29 +280,19 @@ if "exam_questions" in st.session_state and not st.session_state.submitted:
     elapsed = int(time.time() - st.session_state.start_time)
     remaining = max(EXAM_TIME_LIMIT - elapsed, 0)
 
-    # ======================
-    # RIGHT PANEL
-    # ======================
-
     right = st.columns([4,1])[1]
 
     with right:
 
         st.markdown("### Exam Dashboard")
 
-        st.metric(
-            "⏱ Time Remaining",
-            format_time(remaining)
-        )
+        st.metric("Time Remaining", format_time(remaining))
 
         answered_count = sum(
             1 for v in st.session_state.answers.values() if v
         )
 
-        st.metric(
-            "Answered",
-            f"{answered_count}/{len(questions)}"
-        )
+        st.metric("Answered", f"{answered_count}/{len(questions)}")
 
         st.markdown("### Navigator")
 
@@ -297,10 +315,7 @@ if "exam_questions" in st.session_state and not st.session_state.submitted:
             if flagged:
                 label = f"🚩{label}"
 
-            if answered:
-                display = f"🟩{label}"
-            else:
-                display = f"🟥{label}"
+            display = f"🟩{label}" if answered else f"🟥{label}"
 
             if cols[i % 5].button(display):
 
@@ -308,9 +323,9 @@ if "exam_questions" in st.session_state and not st.session_state.submitted:
                 st.rerun()
 
 
-    # ======================
+    # =========================
     # QUESTION DISPLAY
-    # ======================
+    # =========================
 
     q_index = st.session_state.current_q
     q = questions[q_index]
@@ -379,9 +394,7 @@ if st.session_state.get("review"):
 
         flag = "🚩" if i in st.session_state.flagged else ""
 
-        st.write(
-            f"{i+1}. {'Answered' if answered else 'Not answered'} {flag}"
-        )
+        st.write(f"{i+1}. {'Answered' if answered else 'Not answered'} {flag}")
 
     if st.button("Submit Exam"):
         st.session_state.submitted = True
