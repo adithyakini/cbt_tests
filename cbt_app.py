@@ -18,6 +18,16 @@ EXAM_TIME_LIMIT = 900  # seconds
 
 
 # ======================================
+# TIMER FORMATTER
+# ======================================
+
+def format_time(seconds):
+    minutes = seconds // 60
+    secs = seconds % 60
+    return f"{minutes:02}:{secs:02}"
+
+
+# ======================================
 # PROMPT
 # ======================================
 
@@ -60,10 +70,7 @@ def generate_question_bank(exam_type):
                 "role": "user",
                 "content": f"""
 Generate {QUESTION_BANK_SIZE} certification exam questions for {exam_type}.
-
-Include:
-easy, medium, hard questions
-multiple domains
+Include easy, medium and hard questions across multiple domains.
 """
             }
         ]
@@ -142,11 +149,40 @@ Analyze exam results and suggest improvement areas.
 
 
 # ======================================
+# LEFT SIDEBAR (ABOUT)
+# ======================================
+
+st.sidebar.title("About EdgeUp")
+
+st.sidebar.markdown("""
+**EdgeUp CBT Engine**
+
+Practice certification exams with AI-generated questions.
+
+Features:
+
+• Adaptive practice exams  
+• Question flagging  
+• Domain scoring  
+• AI study recommendations  
+• Practice for certifications like:
+  - AZ-900
+  - AZ-104
+  - FinOps
+  - DV360
+
+Powered by **OpenAI GPT-4o-mini**
+
+ΛVICΛ Labs — 2026
+""")
+
+
+# ======================================
 # HEADER
 # ======================================
 
 st.title("🎓 EdgeUp")
-st.caption("Adaptive CBT Engine | ΛVICΛ 2026")
+st.caption("Adaptive CBT Practice Engine | ΛVICΛ 2026")
 
 st.markdown("---")
 
@@ -216,52 +252,61 @@ if "exam_questions" in st.session_state and not st.session_state.submitted:
     elapsed = int(time.time() - st.session_state.start_time)
     remaining = max(EXAM_TIME_LIMIT - elapsed, 0)
 
-    st.sidebar.metric("⏱ Time Remaining", f"{remaining}s")
-
-    # progress metric
-    answered_count = sum(
-        1 for v in st.session_state.answers.values() if v
-    )
-
-    st.sidebar.metric(
-        "Answered",
-        f"{answered_count}/{len(questions)}"
-    )
-
     # ======================
-    # NAVIGATOR
+    # RIGHT PANEL
     # ======================
 
-    st.sidebar.markdown("### Question Navigator")
+    right = st.columns([4,1])[1]
 
-    cols = st.sidebar.columns(5)
+    with right:
 
-    for i in range(len(questions)):
+        st.markdown("### Exam Dashboard")
 
-        q = questions[i]
-        qid = q["question_id"]
-
-        answered = (
-            qid in st.session_state.answers
-            and st.session_state.answers[qid]
+        st.metric(
+            "⏱ Time Remaining",
+            format_time(remaining)
         )
 
-        flagged = i in st.session_state.flagged
+        answered_count = sum(
+            1 for v in st.session_state.answers.values() if v
+        )
 
-        label = str(i+1)
+        st.metric(
+            "Answered",
+            f"{answered_count}/{len(questions)}"
+        )
 
-        if flagged:
-            label = f"🚩{label}"
+        st.markdown("### Navigator")
 
-        if answered:
-            display = f"🟩{label}"
-        else:
-            display = f"🟥{label}"
+        cols = st.columns(5)
 
-        if cols[i % 5].button(display):
+        for i in range(len(questions)):
 
-            st.session_state.current_q = i
-            st.rerun()
+            q = questions[i]
+            qid = q["question_id"]
+
+            answered = (
+                qid in st.session_state.answers
+                and st.session_state.answers[qid]
+            )
+
+            flagged = i in st.session_state.flagged
+
+            label = str(i+1)
+
+            if flagged:
+                label = f"🚩{label}"
+
+            if answered:
+                display = f"🟩{label}"
+            else:
+                display = f"🟥{label}"
+
+            if cols[i % 5].button(display):
+
+                st.session_state.current_q = i
+                st.rerun()
+
 
     # ======================
     # QUESTION DISPLAY
@@ -290,16 +335,10 @@ if "exam_questions" in st.session_state and not st.session_state.submitted:
 
     st.session_state.answers[qid] = selected
 
-    # ======================
-    # FLAG
-    # ======================
 
     if st.button("🚩 Flag Question"):
         st.session_state.flagged.add(q_index)
 
-    # ======================
-    # NAV BUTTONS
-    # ======================
 
     col1,col2,col3 = st.columns(3)
 
