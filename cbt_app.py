@@ -204,6 +204,7 @@ preset_exam = st.selectbox(
         "",
         "AZ-900",
         "AZ-104",
+        "AZ-305",
         "FinOps Practitioner",
         "DV360 Programmatic Advertising"
     ]
@@ -448,4 +449,5 @@ if st.session_state.get("submitted"):
     st.write(weakness)
 
     st.balloons()
+
 
